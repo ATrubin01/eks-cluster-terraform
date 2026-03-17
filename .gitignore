@@ -10,6 +10,9 @@
 # Sensitive variable files
 *.tfvars
 !*.tfvars.example
+!dev.tfvars
+!production.tfvars
+!staging.tfvars
 
 # Crash logs
 crash.log
