@@ -6,7 +6,7 @@ metadata:
   namespace: kube-system
   annotations:
     # Replace YOUR_AWS_ACCOUNT_ID and YOUR_CLUSTER_NAME before applying
-    eks.amazonaws.com/role-arn: arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/eks-cluster-autoscaler
+    eks.amazonaws.com/role-arn: arn:aws:iam::468457242339:role/eks-cluster-autoscaler
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -120,7 +120,7 @@ spec:
           value: "podinfo"
           effect: "NoSchedule"
       containers:
-        - image: k8s.gcr.io/autoscaling/cluster-autoscaler:v1.21.0
+        - image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.30.0
           name: cluster-autoscaler
           resources:
             limits:
@@ -137,7 +137,7 @@ spec:
             - --skip-nodes-with-local-storage=false
             - --expander=least-waste
             # Replace YOUR_CLUSTER_NAME before applying
-            - --node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/YOUR_CLUSTER_NAME
+            - --node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/eks-cluster-dev
             - --balance-similar-node-groups
             - --skip-nodes-with-system-pods=false
           volumeMounts:
