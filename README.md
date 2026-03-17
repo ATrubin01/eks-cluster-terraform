@@ -110,6 +110,36 @@ terraform apply -var-file=dev.tfvars
 aws eks update-kubeconfig --name eks-cluster-dev --region us-east-1
 ```
 
+### 3a. Grant your local IAM user access to the cluster
+
+The cluster is created by the GitHub Actions IAM role, so by default your local IAM user has no access. Run these to fix it:
+
+```bash
+# Enable API auth mode
+aws eks update-cluster-config \
+  --name eks-cluster-dev \
+  --access-config authenticationMode=API_AND_CONFIG_MAP \
+  --region us-east-1
+
+# Wait ~30 seconds for it to apply, then add your IAM user as cluster admin
+aws eks create-access-entry \
+  --cluster-name eks-cluster-dev \
+  --principal-arn $(aws sts get-caller-identity --query Arn --output text) \
+  --region us-east-1
+
+aws eks associate-access-policy \
+  --cluster-name eks-cluster-dev \
+  --principal-arn $(aws sts get-caller-identity --query Arn --output text) \
+  --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+  --access-scope type=cluster \
+  --region us-east-1
+```
+
+Verify it works:
+```bash
+kubectl get nodes
+```
+
 ### 4. Apply Kubernetes Resources
 ```bash
 # Storage class and cluster autoscaler
