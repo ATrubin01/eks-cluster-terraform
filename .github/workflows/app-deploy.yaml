@@ -1,0 +1,58 @@
+name: Build and Deploy Web App
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'web-app/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-east-1
+        role-to-assume: ${{ secrets.IAM_ROLE }}
+        audience: sts.amazonaws.com
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: simple-web-app
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./web-app
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+    - name: Update kubeconfig
+      run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region us-east-1
+
+    - name: Deploy to EKS
+      run: |
+        sed -i "s|PLACEHOLDER_IMAGE|${{ env.IMAGE }}|g" web-app/k8s/deployment.yaml
+        kubectl apply -f web-app/k8s/deployment.yaml
+        kubectl apply -f web-app/k8s/service.yaml
+        kubectl apply -f web-app/k8s/ingress.yaml
+        kubectl rollout status deployment/simple-web-app --timeout=120s
+
+    - name: Deploy podinfo
+      run: |
+        kubectl apply -f web-app/k8s/podinfo/podinfo-deployment.yaml
+        kubectl apply -f web-app/k8s/podinfo/podinfo-service.yaml
+        kubectl apply -f web-app/k8s/podinfo/podinfo-hpa.yaml

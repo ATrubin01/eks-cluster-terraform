@@ -1,0 +1,64 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - staging
+    paths:
+      - 'vpc/**'
+      - 'eks-module/**'
+      - 'roots/**'
+
+env:
+  ENVIRONMENT_STAGE: ${{ (github.ref == 'refs/heads/main' && 'production') || (github.ref == 'refs/heads/staging' && 'staging') || 'dev' }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: ${{ (github.ref == 'refs/heads/main' && 'production') || (github.ref == 'refs/heads/staging' && 'staging') || 'dev' }}
+    defaults:
+      run:
+        working-directory: ./roots/main-eks-root
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-east-1
+        role-to-assume: ${{ secrets.IAM_ROLE }}
+        audience: sts.amazonaws.com
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Terraform Init
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+          -backend-config="key=terraform/eks/${{ env.ENVIRONMENT_STAGE }}.tfstate" \
+          -backend-config="region=us-east-1" \
+          -backend-config="dynamodb_table=terraform-state-lock" \
+          -backend-config="encrypt=true"
+
+    - name: Terraform Plan
+      run: terraform plan -var-file=${{ env.ENVIRONMENT_STAGE }}.tfvars -out=tfplan
+
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main'
+      run: terraform apply -auto-approve "tfplan"
+
+    - name: Update kubeconfig and apply Kubernetes resources
+      if: github.ref == 'refs/heads/main'
+      run: |
+        aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region us-east-1
+        kubectl apply -f ./kubernetes_resources/gp3-storage-class.yaml
+        kubectl apply -f ./kubernetes_resources/cluster-autoscaler.yaml

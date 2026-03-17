@@ -1,0 +1,34 @@
+{
+    "variables": {
+        "aws_region": "us-east-1",
+        "ami_name": "golden-ubuntu-nginx",
+        "instance_type": "t2.micro",
+        "source_ami_id": "ami-04a81a99f5ec58529",
+        "ssh_username": "ubuntu"
+    },
+    "builders": [
+        {
+            "type": "amazon-ebs",
+            "region": "{{user `aws_region`}}",
+            "instance_type": "{{user `instance_type`}}",
+            "source_ami": "{{user `source_ami_id`}}",
+            "ami_name": "{{user `ami_name`}}",
+            "ami_description": "Golden AMI with Ubuntu 22.04 LTS and Nginx",
+            "tags": {
+                "Name": "{{user `ami_name`}}"
+            },
+            "ssh_username": "{{user `ssh_username`}}"
+        }
+    ],
+    "provisioners": [
+        {
+            "type": "shell",
+            "inline": [
+                "sudo apt-get update",
+                "sudo apt-get install -y nginx",
+                "sudo systemctl enable nginx",
+                "sudo systemctl start nginx"
+            ]
+        }
+    ]
+}
