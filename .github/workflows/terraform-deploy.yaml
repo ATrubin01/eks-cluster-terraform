@@ -3,16 +3,23 @@ name: Terraform Deploy
 on:
   push:
     branches:
-      - main
       - dev
       - staging
     paths:
       - 'vpc/**'
       - 'eks-module/**'
       - 'roots/**'
+  pull_request:
+    branches:
+      - staging
+      - main
+    paths:
+      - 'vpc/**'
+      - 'eks-module/**'
+      - 'roots/**'
 
 env:
-  ENVIRONMENT_STAGE: ${{ (github.ref == 'refs/heads/main' && 'production') || (github.ref == 'refs/heads/staging' && 'staging') || 'dev' }}
+  ENVIRONMENT_STAGE: ${{ (github.base_ref == 'main' && 'production') || (github.base_ref == 'staging' && 'staging') || (github.ref_name == 'staging' && 'staging') || 'dev' }}
 
 permissions:
   id-token: write
@@ -49,15 +56,26 @@ jobs:
           -backend-config="dynamodb_table=terraform-state-lock" \
           -backend-config="encrypt=true"
 
+    - name: Force unlock state (clear any stale locks)
+      run: |
+        LOCK_ID=$(aws dynamodb scan \
+          --table-name terraform-state-lock \
+          --region us-east-1 \
+          --query 'Items[0].LockID.S' \
+          --output text 2>/dev/null || echo "")
+        if [ -n "$LOCK_ID" ] && [ "$LOCK_ID" != "None" ] && [ "$LOCK_ID" != "null" ]; then
+          terraform force-unlock -force "$LOCK_ID" || true
+        fi
+
     - name: Terraform Plan
       run: terraform plan -var-file=${{ env.ENVIRONMENT_STAGE }}.tfvars -out=tfplan
 
     - name: Terraform Apply
-      if: github.ref == 'refs/heads/main'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/staging' || github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.base_ref == 'main'
       run: terraform apply -auto-approve "tfplan"
 
     - name: Update kubeconfig and apply Kubernetes resources
-      if: github.ref == 'refs/heads/main'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/staging' || github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.base_ref == 'main'
       run: |
         aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region us-east-1
         kubectl apply -f ./kubernetes_resources/gp3-storage-class.yaml

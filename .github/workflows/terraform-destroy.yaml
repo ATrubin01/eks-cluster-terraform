@@ -52,5 +52,16 @@ jobs:
           -backend-config="dynamodb_table=terraform-state-lock" \
           -backend-config="encrypt=true"
 
+    - name: Force unlock state (clear any stale locks)
+      run: |
+        LOCK_ID=$(aws dynamodb scan \
+          --table-name terraform-state-lock \
+          --region us-east-1 \
+          --query 'Items[0].LockID.S' \
+          --output text 2>/dev/null || echo "")
+        if [ -n "$LOCK_ID" ] && [ "$LOCK_ID" != "None" ] && [ "$LOCK_ID" != "null" ]; then
+          terraform force-unlock -force "$LOCK_ID" || true
+        fi
+
     - name: Terraform Destroy
       run: terraform destroy -var-file=${{ inputs.environment }}.tfvars -auto-approve
