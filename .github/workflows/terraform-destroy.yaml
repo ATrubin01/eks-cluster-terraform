@@ -56,11 +56,16 @@ jobs:
       run: |
         LOCK_ID=$(aws dynamodb scan \
           --table-name terraform-state-lock \
+          --filter-expression "begins_with(LockID, :prefix)" \
+          --expression-attribute-values "{\":prefix\":{\"S\":\"alon-eks-terraform-state/terraform/eks/${{ inputs.environment }}.tfstate\"}}" \
           --region us-east-1 \
-          --query 'Items[0].LockID.S' \
+          --query 'Items[0].Info.S' \
           --output text 2>/dev/null || echo "")
         if [ -n "$LOCK_ID" ] && [ "$LOCK_ID" != "None" ] && [ "$LOCK_ID" != "null" ]; then
-          terraform force-unlock -force "$LOCK_ID" || true
+          ID=$(echo "$LOCK_ID" | python3 -c "import sys,json; print(json.load(sys.stdin)['ID'])" 2>/dev/null || echo "")
+          if [ -n "$ID" ]; then
+            terraform force-unlock -force "$ID" || true
+          fi
         fi
 
     - name: Terraform Destroy
